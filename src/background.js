@@ -31,7 +31,8 @@ import { EventEmitter } from 'events';
 import express from 'express';
 import expressProxy from 'express-http-proxy';
 import Store from 'electron-store';
-import { createMpris } from '@/electron/mpris';
+import { createMpris, createDbus } from '@/electron/mpris';
+import { spawn } from 'child_process';
 const clc = require('cli-color');
 const log = text => {
   console.log(`${clc.blueBright('[background.js]')} ${text}`);
@@ -332,6 +333,14 @@ class Background {
       this.store.set('window', this.window.getBounds());
     });
 
+    this.window.on('maximize', () => {
+      this.window.webContents.send('isMaximized', true);
+    });
+
+    this.window.on('unmaximize', () => {
+      this.window.webContents.send('isMaximized', false);
+    });
+
     this.window.webContents.on('new-window', function (e, url) {
       e.preventDefault();
       log('open url');
@@ -410,6 +419,21 @@ class Background {
       // register global shortcuts
       if (this.store.get('settings.enableGlobalShortcut') !== false) {
         registerGlobalShortcut(this.window, this.store);
+      }
+
+      // try to start osdlyrics process on start
+      if (this.store.get('settings.enableOsdlyricsSupport')) {
+        await createDbus(this.window);
+        log('try to start osdlyrics process');
+        const osdlyricsProcess = spawn('osdlyrics');
+
+        osdlyricsProcess.on('error', err => {
+          log(`failed to start osdlyrics: ${err.message}`);
+        });
+
+        osdlyricsProcess.on('exit', (code, signal) => {
+          log(`osdlyrics process exited with code ${code}, signal ${signal}`);
+        });
       }
 
       // create mpris
